@@ -1,5 +1,5 @@
 from maix import camera, display, image
-from apriltagmap import generate_map_dict
+from dredge.apriltagmap import generate_map_dict
 
 # 生成坐标映射字典
 coord_map = generate_map_dict(rows=15, cols=20)
@@ -7,7 +7,7 @@ coord_map = generate_map_dict(rows=15, cols=20)
 cam = camera.Camera()
 cam.open(width=640, height=480)
 
-screen = display.Display(640, 480)
+screen = display.Display( width=640, height=480)
 screen.open()
 
 roi = [160, 120, 320, 240]

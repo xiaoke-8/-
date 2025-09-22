@@ -145,3 +145,4 @@ def DataTransimit(CMDData, serial=serial):
 
         serial.write(full_data)
  
+
