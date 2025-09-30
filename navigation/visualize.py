@@ -13,14 +13,24 @@ def visualize_episode(env, model, steps, save_path):
     texts = []
 
     for t in range(steps):
-        action = model.main(
-            {
-                "positionX": env.car_positionX,
-                "positionY": env.car_positionY,
-                "direction": env.car_direction,
-                "time": env.time,
-            }
-        )
+        if t < 3:
+            action = model.predict(
+                {
+                    "positionX": env.car_positionX,
+                    "positionY": env.car_positionY,
+                    "direction": env.car_direction,
+                    "time": env.time,
+                }
+            )
+        else:
+            action = model.predict(
+                {
+                    "positionX": None,
+                    "positionY": None,
+                    "direction": None,
+                    "time": env.time,
+                }
+            )
         result = env.step(action)
         if not result:
             print("Environment step failed.")

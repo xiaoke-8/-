@@ -3,21 +3,29 @@ from dredge.uarttransmit import CMD_Packet, DataTransimit
 from config import *
 from navigation.model import CarModel
 from location import Location
-
+import numpy as np
 
 # ===== 全局变量 =====
-cur_time = 0.0
-delta_T = 1 / fps
+global start_time
+global cur_time
+action = [0, 0, 0]
 
 CMD = CMD_Packet()
+car_model = CarModel()
+
+
+def update_time():
+    global cur_time
+    cur_time = time.time() - start_time
+
 
 # ===== 初始化硬件 =====
-cam = camera.Camera(width=320, height=240, fps=fps)
+cam = camera.Camera(width=320, height=240, fps=15)
 
 screen = display.Display(width=640, height=480)
 
 
-def motor_run(Vx, Vy, Vw, motorsPos):
+def motor_run(Vx, Vy, Vw, motorsPos = []):
     CMD.Vx = -Vx
     CMD.Vy = -Vy
     CMD.Vw = Vw
@@ -25,27 +33,41 @@ def motor_run(Vx, Vy, Vw, motorsPos):
     DataTransimit(CMD)
 
 
+start_time = time.time()
+cur_time = 0.0
 while True:
     img = cam.read()
-    screen.show(img)
 
     # Locate myself using AprilTag
-    img, positionX, positionY, direction = Location().locate(img)
+    positionX, positionY, direction, img = Location().locate(img)
+    if direction is not None:
+        direction -= np.pi / 2
 
     # Move
+    update_time()
     observations = {
         "positionX": positionX,
         "positionY": positionY,
         "direction": direction,
-        "time": time,
+        "time": cur_time,
     }
-    # action = CarModel.main(observations)
+    
+    print(f"Time: {cur_time:.3f}")
+    print(f"  Detect Pos: {positionX}, {positionY}, {direction}")
 
-    # action = [1,0,0]
-    # if cur_time > 3:
-    #     action = [0,0,0]
+    action = car_model.predict(observations)
 
-    # motor_run(action[0], action[1], action[2], [])
+    if cur_time > 60:
+        break
 
-    time.sleep_ms(delta_T)
-    cur_time += delta_T
+    # action = [0, 0, 1]
+    motor_run(action[0], action[1], action[2])
+
+    # screen.show(img)
+
+    update_time()
+
+    print(
+        f"  Pos: ({car_model.positionX:.1f}, {car_model.positionY:.1f}, {car_model.direction:.2f})"
+    )
+    print(f"  Action: (Vx: {action[0]:.2f}, Vy: {action[1]:.2f}, Vw: {action[2]:.2f})")

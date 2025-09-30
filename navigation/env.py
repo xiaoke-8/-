@@ -2,25 +2,15 @@ import numpy as np
 from utils import *
 
 total_time = 5
-fps = 30
+fps = 10
 delta_T = 1.0 / fps
 
 map_width = 315
 map_height = 420
 
-
-def get_square_points(x, y, angle):
-    # 计算正方形四个顶点坐标
-    half_w = car_width / 2
-    # 正方形顶点相对中心的坐标（未旋转）
-    rel_points = np.array(
-        [[half_w, half_w], [half_w, -half_w], [-half_w, -half_w], [-half_w, half_w]]
-    )
-    # 旋转矩阵
-    rot = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
-    # 旋转并平移
-    abs_points = np.dot(rel_points, rot.T) + np.array([x, y])
-    return abs_points  # shape (4,2)
+startX = 30.43
+startY = 42
+startDirection = -1
 
 
 def check_collision(car_x, car_y, car_direction):
@@ -39,9 +29,9 @@ def check_collision(car_x, car_y, car_direction):
 
 class NavigationEnv:
     def __init__(self):
-        self.car_positionX = 315 - 40
-        self.car_positionY = 40
-        self.car_direction = 0
+        self.car_positionX = startX
+        self.car_positionY = startY
+        self.car_direction = startDirection
 
         self.time = 0.0
 

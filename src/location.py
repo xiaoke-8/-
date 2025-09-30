@@ -3,14 +3,18 @@ from maix import image
 import numpy as np
 
 # AprilTag 识别参数
-roi = []
+roi = [40, 120, 240, 120]
 families = image.ApriltagFamilies.TAG36H11
 fx = float(-1)
 fy = float(-1)
 cx = 320
 cy = 240
 
-k = -9
+kx = -9.1
+bx = -33
+ky = -13
+by = -33
+kz = -6
 
 
 class Location:
@@ -19,26 +23,47 @@ class Location:
 
     def locate(self, img):
         apriltags = img.find_apriltags(roi, families, fx, fy, cx, cy)
-
         total_x = 0.0
         total_y = 0.0
         total_direction = 0.0
         weight_sum = 0.0
 
-        for a in apriltags:
+        img.draw_rect(roi[0], roi[1], roi[2], roi[3], image.COLOR_WHITE)
+
+        # Find the closest tag
+        a = (
+            min(
+                apriltags,
+                key=lambda tag: abs(tag.x_translation() * kx + bx)+abs(tag.y_translation() * ky + by)
+            )
+            if apriltags
+            else None
+        )
+
+        if a:
             tag_id = a.id()
 
             # 使用映射字典查询坐标
             if tag_id in self.coord_map:
                 global_coord = self.coord_map[tag_id]
-                x_trans = a.x_translation() * k - 27.0
-                y_trans = a.y_translation() * k - 20.0
-                z_trans = a.z_translation() * k
+                x_trans = a.x_translation() * kx + bx
+                y_trans = a.y_translation() * ky + by
+                z_trans = a.z_translation() * kz
                 z_rot = a.z_rotation()
+
+                trans_text = f"{x_trans:.2f} {y_trans:.2f} {z_trans:.2f}"
+                img.draw_string(5, 20, trans_text, color=image.COLOR_GREEN)
 
                 # 计算距离和相对位置
                 distance = np.sqrt(x_trans**2 + y_trans**2 + z_trans**2)
-                direction = (np.pi * 1.5 - z_rot + np.pi * 2 + 0.14) % (np.pi * 2)
+                rel_direction = (np.pi * 1.5 - z_rot + np.pi * 2 + 0.20) % (np.pi * 2)
+                comp_angle = (rel_direction) % np.pi - np.pi / 2
+                direction = (rel_direction + comp_angle * 0.19 / (np.pi / 2)) % (
+                    np.pi * 2
+                )
+
+                direction_text = f"{rel_direction:.2f} {comp_angle:.2f} {direction:.2f}"
+                img.draw_string(5, 35, direction_text, color=image.COLOR_GREEN)
 
                 # 计算绝对坐标
                 (idx, idy) = global_coord
@@ -46,12 +71,12 @@ class Location:
                 absolute_y = 29.5 + (idx - 1) * 19
 
                 # 输出精准坐标信息
-                print(
-                    f"Tag ID: {tag_id}, 全局坐标: {global_coord}, direction: {direction}"
-                )
-                print(
-                    f"相对位置: X={x_trans:.2f}, Y={y_trans:.2f}, Z={z_trans:.2f} dis={distance:.2f}cm"
-                )
+                # print(
+                #     f"Tag ID: {tag_id}, 全局坐标: {global_coord}, direction: {direction}"
+                # )
+                # print(
+                #     f"相对位置: X={x_trans:.2f}, Y={y_trans:.2f}, Z={z_trans:.2f} dis={distance:.2f}cm"
+                # )
 
                 # 计算相机精准坐标
                 camera_x = (

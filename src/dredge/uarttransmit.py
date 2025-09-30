@@ -2,10 +2,10 @@ from maix import uart, image, camera, display, pinmap
  
 devices = uart.list_devices()
  
-serial = uart.UART(devices[0], 115200)
+serial = uart.UART("/dev/ttyS1", 115200)
  
-pinmap.set_pin_function("A17", "UART1_RX")
-pinmap.set_pin_function("A16", "UART1_TX")
+pinmap.set_pin_function("A18", "UART1_RX")
+pinmap.set_pin_function("A19", "UART1_TX")
 
 class CMD_Packet:
     """CMD Packet Structure for UART Transmission
@@ -79,7 +79,7 @@ class CMD_Packet:
             if not (0 <= v <= 180):
                 raise ValueError(f"motorsPos[{i}] 必须在 0~180 度之间")
         self._motorsPos = [int(round(v / 180 * 255)) for v in values]
-        self._motorsPos += [0] * (6 - len(self._motorsPos))
+        self._motorsPos += [128] * (6 - len(self._motorsPos))
  
 crc16_table = [
     0x0000, 0x1189, 0x2312, 0x329b, 0x4624, 0x57ad, 0x6536, 0x74bf, 0x8c48, 0x9dc1, 0xaf5a, 0xbed3,
@@ -143,6 +143,5 @@ def DataTransimit(CMDData, serial=serial):
 
         full_data = raw_data + bytes([crc_low, crc_high])
 
+        # print(full_data)
         serial.write(full_data)
- 
-
