@@ -27,6 +27,30 @@ locator = Location()
 
 ban_seafood_time = -100.0  # 最近一次危险海鲜出现的时间
 
+servo_yaw = 0
+servo_pitch = 0
+
+positions = [
+    (0, 0),
+    (160, 45),  # 1
+    (150, 60),  # 2
+    (129, 65),  # 3
+    (155, 23),  # 4
+    (138, 28),  # 5
+    (115, 47),  # 6
+    (150, 0),  # 7
+    (134, 6),  # 8
+    (110, 7),  # 9
+]
+
+perm = [7, 4, 6, 9, 5, 8, 1, 2, 3]
+
+
+def shoot(id):
+    (servo_yaw, servo_pitch) = positions[id]
+    motor_run(0, 0, 0, [servo_yaw, servo_pitch])
+    print(servo_yaw, servo_pitch)
+
 
 def update_time():
     global cur_time
@@ -56,6 +80,18 @@ def change_state(new_state, duration):
 
 start_time = time.time()
 cur_time = 0.0
+
+
+shoot(9)
+time.sleep(3)
+
+for r in range(2):
+    for i in range(9):
+        shoot(perm[i])
+        time.sleep(2)
+    time.sleep(1)
+
+
 while True:
     update_time()
 
@@ -117,7 +153,7 @@ while True:
             dx = (Vx * np.cos(direction) - Vy * np.sin(direction)) * 100
             dy = (Vx * np.sin(direction) + Vy * np.cos(direction)) * 100
 
-            print(f"dx: {dx}, dy: {dy}, pos: {positionX}, {positionY}")
+            # print(f"dx: {dx}, dy: {dy}, pos: {positionX}, {positionY}")
             # print(
             #     check_collide_with_walls(
             #         (positionX, positionY), (positionX + dx * 1.5, positionY + dy * 1.5)

@@ -14,7 +14,7 @@ class CarModel:
     def __init__(self):
         self.positionX = 0.0
         self.positionY = 0.0
-        self.direction = 0.0
+        self.direction = np.pi/2
         self.vx = 0
         self.vy = 0
         self.vw = 0
@@ -401,7 +401,7 @@ class CarModel:
         self.update_visit()
 
         # If the line to the next point intersects a wall, replan
-        if self.time - self.last_replan_time > 5:
+        if self.time - self.last_replan_time > 10:
             try:
                 if self.path is not None and len(self.path) > 0:
                     px, py = self.path[self.current_path_index]
