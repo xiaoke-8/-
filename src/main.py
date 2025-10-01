@@ -59,8 +59,8 @@ cur_time = 0.0
 while True:
     update_time()
 
-    # if cur_time > 30:
-    #     state = 4
+    if cur_time > 360:
+        state = 4
 
     if state == 3:
         if cur_time < transition_end_time:
@@ -135,7 +135,7 @@ while True:
         print(f"Seafood go: {Vx:.2f}, {Vy:.2f}, {Vw:.2f}, goodbye: {goodbye}")
         motor_run(Vx, Vy, Vw)
 
-        screen.show(img)
+        # screen.show(img)
 
         if goodbye:
             change_state(1, 0)
