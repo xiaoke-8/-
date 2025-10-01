@@ -1,5 +1,14 @@
 from navigation.utils import *
 
+home_node = 8
+
+
+def check_collide_with_walls(p1, p2):
+    for x1, y1, x2, y2 in light_walls:
+        if is_segments_intersect(p1, p2, (x1, y1), (x2, y2)):
+            return True
+    return False
+
 
 class CarModel:
     def __init__(self):
@@ -18,7 +27,11 @@ class CarModel:
         self.current_node = None
         self.current_target = None
 
+        self.last_replan_time = 0  # To avoid replanning too frequently
+
         self.adjust_mode = True  # Whether in adjust mode
+
+        self.at_home_aligned = False
 
     def update_information(self, observation):
         positionX = observation.get("positionX", None)
@@ -27,7 +40,7 @@ class CarModel:
         time = observation.get("time", None)
 
         self.del_time = time - self.time
-        print("Time!", time, self.time, self.del_time)
+        # print("Time!", time, self.time, self.del_time)
         self.time = time
 
         if positionX is not None and positionY is not None and direction is not None:
@@ -36,8 +49,8 @@ class CarModel:
             self.direction = direction
         else:
             # Estimate position based on last known velocity and time difference
-            print("Estimating position...")
-            print(self.vx, self.vy, self.vw, self.del_time)
+            # print("Estimating position...")
+            # print(self.vx, self.vy, self.vw, self.del_time)
 
             w = 1.0
             vdx = (
@@ -101,7 +114,7 @@ class CarModel:
             )  # Slightly prefer closer nodes
         self.current_node = accessible_nodes[np.argmin(angle_diffs)]
 
-    def find_max_visit_path(self, start, goal, edges, n_nodes, init_direction=None):
+    def find_max_visit_path(self, start, goal, edges, init_direction=None):
         from collections import defaultdict
 
         graph = defaultdict(list)
@@ -162,6 +175,51 @@ class CarModel:
         dfs(start, [start], set([start]), 0, 0, None, 0)
         return best_path
 
+    def find_min_dist_path(self, start, goal, nodes, edges):
+        from collections import defaultdict
+
+        n_nodes = len(nodes)
+
+        # 构建邻接表
+        graph = defaultdict(list)
+        for u, v in edges:
+            graph[u].append(v)
+            graph[v].append(u)
+
+        # 初始化距离和前驱
+        dist = [float("inf")] * n_nodes
+        prev = [None] * n_nodes
+        dist[start] = 0
+
+        # Bellman-Ford 主循环
+        for _ in range(n_nodes - 1):
+            updated = False
+            for u, v in edges:
+                for a, b in [(u, v), (v, u)]:
+                    nx, ny, _ = nodes[b]
+                    cx, cy, _ = nodes[a]
+                    distance = np.hypot(nx - cx, ny - cy)
+                    if dist[a] + distance < dist[b]:
+                        dist[b] = dist[a] + distance
+                        prev[b] = a
+                        updated = True
+            if not updated:
+                break
+
+        # 回溯路径
+        path = []
+        node = goal
+        while node is not None and node != start:
+            path.append(node)
+            node = prev[node]
+        if node == start:
+            path.append(start)
+            path.reverse()
+            return path
+        else:
+            # 不可达
+            return []
+
     def plan_path(self):
         print("Start planning path..")
 
@@ -188,8 +246,50 @@ class CarModel:
                 self.current_node,
                 target_node,
                 edges,
-                len(nodes),
                 init_direction=self.direction + np.pi / 2,
+            )
+            print(f"Planned path: {path}")
+            # Divide path into segments with length at most divide_length
+            divided_path = []
+
+            def divide_segment(x1, y1, x2, y2):
+                dist = np.hypot(x2 - x1, y2 - y1)
+                n_divisions = max(0, int(dist // divide_length)) + 1
+                for j in range(n_divisions):
+                    t = j / n_divisions
+                    nx = x1 + t * (x2 - x1)
+                    ny = y1 + t * (y2 - y1)
+                    divided_path.append((nx, ny))
+
+            # First start from current position to the first node
+            if len(path) > 0:
+                x1, y1 = self.positionX, self.positionY
+                x2, y2, _ = nodes[path[0]]
+                divide_segment(x1, y1, x2, y2)
+
+            for i in range(len(path) - 1):
+                x1, y1, _ = nodes[path[i]]
+                x2, y2, _ = nodes[path[i + 1]]
+                divide_segment(x1, y1, x2, y2)
+
+            # print(f"Divided path: {divided_path}")
+            self.path = divided_path
+            self.current_path_index = 0
+        except ValueError as e:
+            print(e)
+            self.path = []
+
+    def plan_home_path(self):
+        print("Start planning home path..")
+
+        self.current_target = home_node
+
+        print(f"Current node: {self.current_node}, Target node: {home_node}")
+
+        # DFS to find path from current position to target_node
+        try:
+            path = self.find_min_dist_path(
+                self.current_node, self.current_target, nodes, edges
             )
             print(f"Planned path: {path}")
             # Divide path into segments with length at most divide_length
@@ -243,17 +343,7 @@ class CarModel:
             self.current_path_index += 1
 
         target_x, target_y = self.path[self.current_path_index]
-        print(f"target_x: {target_x:.2f}, target_y: {target_y:.2f}")
-
-        # remain_dis = 0
-        # for i in range(self.current_path_index, len(self.path) - 1):
-        #     remain_dis += np.hypot(
-        #         self.path[i + 1][0] - self.path[i][0],
-        #         self.path[i + 1][1] - self.path[i][1],
-        #     )
-        # print(f"Remaining distance to target: {remain_dis:.2f}")
-        # if remain_dis < target_range:
-        #     self.path = None
+        # print(f"target_x: {target_x:.2f}, target_y: {target_y:.2f}")
 
         # Move towards the target point
 
@@ -267,10 +357,10 @@ class CarModel:
         ) - np.pi
         gamma = 2 * np.sin(alpha) / max(distance, 1e-5)
 
-        print(f"absolute_angle: {absolute_angle}, self.direction: {self.direction}")
-        print(
-            f"Distance to target: {distance:.2f}, Alpha: {alpha:.2f}, Gamma: {gamma:.2f}, Ld: {Ld:.2f}"
-        )
+        # print(f"absolute_angle: {absolute_angle}, self.direction: {self.direction}")
+        # print(
+        #     f"Distance to target: {distance:.2f}, Alpha: {alpha:.2f}, Gamma: {gamma:.2f}, Ld: {Ld:.2f}"
+        # )
 
         align_threshold = (
             align_threshold_adjust if self.adjust_mode else align_threshold_move
@@ -300,19 +390,71 @@ class CarModel:
         )
         self.vw = np.clip(target_w, -vw_limit, vw_limit)
 
-        print(f"Action: vx={self.vx:.2f}, vy={self.vy:.2f}, vw={self.vw:.2f}")
-        print("\n")
+        # print(f"Action: vx={self.vx:.2f}, vy={self.vy:.2f}, vw={self.vw:.2f}")
+        # print("\n")
 
         return np.array([self.vx, self.vy, self.vw])
 
-    def predict(self, observation):
+    def predict(self, observation, home=False):
         # Observation: {positionX: , positionY: , direction: , time: }
         self.update_information(observation)
         self.update_visit()
 
+        # If the line to the next point intersects a wall, replan
+        if self.time - self.last_replan_time > 5:
+            try:
+                if self.path is not None and len(self.path) > 0:
+                    px, py = self.path[self.current_path_index]
+                    for x1, y1, x2, y2 in light_walls:
+                        if is_segments_intersect(
+                            (self.positionX, self.positionY),
+                            (px, py),
+                            (x1, y1),
+                            (x2, y2),
+                        ):
+                            print("Path intersects a wall, replanning...")
+                            self.path = None
+                            self.last_replan_time = self.time
+                            break
+            except Exception as e:
+                print("Error checking path intersection:", e)
+                self.path = None
+                self.last_replan_time = self.time
+
         if self.path is None or len(self.path) == 0:
-            self.update_current_node()
-            self.plan_path()
+            if home:
+                dist_from_home = max(0, self.positionX - 24.5) + max(
+                    0, self.positionY - 29.5
+                )
+                if self.at_home_aligned:
+                    print("At home and aligned, moving slowly.")
+                    return np.array([-0.2, -0.2, -0.05])
+                else:
+                    received_direction = observation.get("direction", None)
+                    if dist_from_home < 70:
+                        if received_direction is not None:
+                            angle_diff = abs(
+                                (0.0 - received_direction + np.pi) % (2 * np.pi) - np.pi
+                            )
+                            if angle_diff < np.deg2rad(10):
+                                self.at_home_aligned = True
+                                print("At home and aligned!")
+                            else:
+                                print(
+                                    f"At home but not aligned, angle_diff: {angle_diff}"
+                                )
+                                return np.array([0.0, 0.0, min(0.5, angle_diff * 0.5)])
+                        else:
+                            print("No tag is found, rotating to find.")
+                            return np.array([0.0, 0.0, 0.3])
+                    else:
+                        print("Not at home.")
+                        self.at_home_aligned = False
+                        self.update_current_node()
+                        self.plan_home_path()
+            else:
+                self.update_current_node()
+                self.plan_path()
 
         action = self.action()
 

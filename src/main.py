@@ -2,6 +2,7 @@ from maix import time, camera, display, image
 from dredge.uarttransmit import CMD_Packet, DataTransimit
 from config import *
 from navigation.model import CarModel
+from navigation.model import check_collide_with_walls
 from location import Location
 from seafood import Seafood
 import numpy as np
@@ -15,6 +16,7 @@ state = 1
 # 1: 导航
 # 2: 捕捞
 # 3: 过渡
+# 4: 回家
 next_state = 0
 transition_end_time = 0.0
 
@@ -22,6 +24,8 @@ CMD = CMD_Packet()
 car_model = CarModel()
 seafood = Seafood()
 locator = Location()
+
+ban_seafood_time = -100.0  # 最近一次危险海鲜出现的时间
 
 
 def update_time():
@@ -55,8 +59,8 @@ cur_time = 0.0
 while True:
     update_time()
 
-    if cur_time > 60:
-        break
+    # if cur_time > 30:
+    #     state = 4
 
     if state == 3:
         if cur_time < transition_end_time:
@@ -66,25 +70,25 @@ while True:
         else:
             print("Transition end, continue to next state " + str(next_state))
             state = next_state
-            if state == 1:
-                car_model.__init__()
-            elif state == 2:
+            # if state == 1:
+            #     car_model.__init__()
+            if state == 2:
                 seafood.__init__()
 
     img = cam.read()
+
+    # Locate myself using AprilTag
+    positionX, positionY, direction, img = locator.locate(img)
+    if direction is not None:
+        direction -= np.pi / 2
 
     if state == 1:
         # Navigation
         seafood_objs = seafood.detect(img)
 
-        if len(seafood_objs) > 0:
+        if cur_time - ban_seafood_time > 15.0 and len(seafood_objs) > 0:
             change_state(2, 0)
             continue
-
-        # Locate myself using AprilTag
-        positionX, positionY, direction, img = locator.locate(img)
-        if direction is not None:
-            direction -= np.pi / 2
 
         # Move
         update_time()
@@ -106,8 +110,28 @@ while True:
         # Seafood picking
         seafood_objs = seafood.detect(img)
 
-        update_time()
         Vx, Vy, Vw, goodbye = seafood.pick(img, seafood_objs, cur_time)
+
+        # Avoid collision
+        if positionX is not None and positionY is not None:
+            dx = (Vx * np.cos(direction) - Vy * np.sin(direction)) * 100
+            dy = (Vx * np.sin(direction) + Vy * np.cos(direction)) * 100
+
+            print(f"dx: {dx}, dy: {dy}, pos: {positionX}, {positionY}")
+            # print(
+            #     check_collide_with_walls(
+            #         (positionX, positionY), (positionX + dx * 1.5, positionY + dy * 1.5)
+            #     )
+            # )
+
+            if check_collide_with_walls(
+                (positionX, positionY), (positionX + dx * 1.5, positionY + dy * 1.5)
+            ):
+                print("Potential collision detected, stopping movement.")
+                Vx, Vy, Vw = 0.0, 0.0, 0.0
+                goodbye = True
+                ban_seafood_time = cur_time
+
         print(f"Seafood go: {Vx:.2f}, {Vy:.2f}, {Vw:.2f}, goodbye: {goodbye}")
         motor_run(Vx, Vy, Vw)
 
@@ -116,3 +140,21 @@ while True:
         if goodbye:
             change_state(1, 0)
             continue
+    elif state == 4:
+        # Go home
+
+        # Move
+        update_time()
+        observations = {
+            "positionX": positionX,
+            "positionY": positionY,
+            "direction": direction,
+            "time": cur_time,
+        }
+
+        print(f"Time: {cur_time:.3f}")
+        print(f"  Detect Pos: {positionX}, {positionY}, {direction}")
+
+        action = car_model.predict(observations, home=True)
+
+        motor_run(action[0], action[1], action[2])

@@ -34,7 +34,8 @@ class Location:
         a = (
             min(
                 apriltags,
-                key=lambda tag: abs(tag.x_translation() * kx + bx)+abs(tag.y_translation() * ky + by)
+                key=lambda tag: abs(tag.x_translation() * kx + bx)
+                + abs(tag.y_translation() * ky + by),
             )
             if apriltags
             else None

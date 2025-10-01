@@ -1,5 +1,7 @@
 from utils import *
 
+home_node = 8
+
 
 class CarModel:
     def __init__(self):
@@ -101,7 +103,7 @@ class CarModel:
             )  # Slightly prefer closer nodes
         self.current_node = accessible_nodes[np.argmin(angle_diffs)]
 
-    def find_max_visit_path(self, start, goal, edges, n_nodes, init_direction=None):
+    def find_max_visit_path(self, start, goal, edges, init_direction=None):
         from collections import defaultdict
 
         graph = defaultdict(list)
@@ -162,6 +164,51 @@ class CarModel:
         dfs(start, [start], set([start]), 0, 0, None, 0)
         return best_path
 
+    def find_min_dist_path(self, start, goal, nodes, edges):
+        from collections import defaultdict
+
+        n_nodes = len(nodes)
+
+        # 构建邻接表
+        graph = defaultdict(list)
+        for u, v in edges:
+            graph[u].append(v)
+            graph[v].append(u)
+
+        # 初始化距离和前驱
+        dist = [float("inf")] * n_nodes
+        prev = [None] * n_nodes
+        dist[start] = 0
+
+        # Bellman-Ford 主循环
+        for _ in range(n_nodes - 1):
+            updated = False
+            for u, v in edges:
+                for a, b in [(u, v), (v, u)]:
+                    nx, ny, _ = nodes[b]
+                    cx, cy, _ = nodes[a]
+                    distance = np.hypot(nx - cx, ny - cy)
+                    if dist[a] + distance < dist[b]:
+                        dist[b] = dist[a] + distance
+                        prev[b] = a
+                        updated = True
+            if not updated:
+                break
+
+        # 回溯路径
+        path = []
+        node = goal
+        while node is not None and node != start:
+            path.append(node)
+            node = prev[node]
+        if node == start:
+            path.append(start)
+            path.reverse()
+            return path
+        else:
+            # 不可达
+            return []
+
     def plan_path(self):
         print("Start planning path..")
 
@@ -188,8 +235,50 @@ class CarModel:
                 self.current_node,
                 target_node,
                 edges,
-                len(nodes),
                 init_direction=self.direction + np.pi / 2,
+            )
+            print(f"Planned path: {path}")
+            # Divide path into segments with length at most divide_length
+            divided_path = []
+
+            def divide_segment(x1, y1, x2, y2):
+                dist = np.hypot(x2 - x1, y2 - y1)
+                n_divisions = max(0, int(dist // divide_length)) + 1
+                for j in range(n_divisions):
+                    t = j / n_divisions
+                    nx = x1 + t * (x2 - x1)
+                    ny = y1 + t * (y2 - y1)
+                    divided_path.append((nx, ny))
+
+            # First start from current position to the first node
+            if len(path) > 0:
+                x1, y1 = self.positionX, self.positionY
+                x2, y2, _ = nodes[path[0]]
+                divide_segment(x1, y1, x2, y2)
+
+            for i in range(len(path) - 1):
+                x1, y1, _ = nodes[path[i]]
+                x2, y2, _ = nodes[path[i + 1]]
+                divide_segment(x1, y1, x2, y2)
+
+            # print(f"Divided path: {divided_path}")
+            self.path = divided_path
+            self.current_path_index = 0
+        except ValueError as e:
+            print(e)
+            self.path = []
+
+    def plan_home_path(self):
+        print("Start planning home path..")
+
+        self.current_target = home_node
+
+        print(f"Current node: {self.current_node}, Target node: {home_node}")
+
+        # DFS to find path from current position to target_node
+        try:
+            path = self.find_min_dist_path(
+                self.current_node, self.current_target, nodes, edges
             )
             print(f"Planned path: {path}")
             # Divide path into segments with length at most divide_length
@@ -245,16 +334,6 @@ class CarModel:
         target_x, target_y = self.path[self.current_path_index]
         print(f"target_x: {target_x:.2f}, target_y: {target_y:.2f}")
 
-        # remain_dis = 0
-        # for i in range(self.current_path_index, len(self.path) - 1):
-        #     remain_dis += np.hypot(
-        #         self.path[i + 1][0] - self.path[i][0],
-        #         self.path[i + 1][1] - self.path[i][1],
-        #     )
-        # print(f"Remaining distance to target: {remain_dis:.2f}")
-        # if remain_dis < target_range:
-        #     self.path = None
-
         # Move towards the target point
 
         absolute_dx = (target_x - self.positionX) / 100  # convert to meters
@@ -305,14 +384,18 @@ class CarModel:
 
         return np.array([self.vx, self.vy, self.vw])
 
-    def predict(self, observation):
+    def predict(self, observation, home=False):
         # Observation: {positionX: , positionY: , direction: , time: }
         self.update_information(observation)
         self.update_visit()
 
+        if home:
+            self.current_target = home_node
+            self.plan_home_path()
+
         if self.path is None or len(self.path) == 0:
             self.update_current_node()
-            self.plan_path()
+            self.plan_path(home)
 
         action = self.action()
 
